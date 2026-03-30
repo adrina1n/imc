@@ -64,10 +64,6 @@ fair_value = alpha × wall_mid + (1 - alpha) × previous_ema
 - Filters false mean reversion signals
 - Provides stable reference for trading decisions
 
-**Validation:**
-- Autocorrelation analysis confirms reduced noise
-- CMU Physics team validation: wall mid eliminates artifacts from ephemeral orders
-
 ---
 
 ### 2. Market Making (Spread Capture)
