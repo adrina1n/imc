@@ -1,14 +1,13 @@
-from typing import List
-import string
-import numpy as np
 import json
-from typing import Any
 import math
+from typing import Any, Dict, List
+from datamodel import (
+    Listing, Observation, Order, OrderDepth,
+    ProsperityEncoder, Symbol, Trade, TradingState
+)
 
-import json
-from typing import Any
-from datamodel import *
-from datamodel import Listing, Observation, Order, OrderDepth, ProsperityEncoder, Symbol, Trade, TradingState
+
+#  LOGGER — ne pas modifier, requis pour le visualiseur Jasper
 
 class Logger:
     def __init__(self) -> None:
@@ -20,30 +19,24 @@ class Logger:
 
     def flush(self, state: TradingState, orders: dict[Symbol, list[Order]], conversions: int, trader_data: str) -> None:
         base_length = len(
-            self.to_json(
-                [
-                    self.compress_state(state, ""),
-                    self.compress_orders(orders),
-                    conversions,
-                    "",
-                    "",
-                ]
-            )
+            self.to_json([
+                self.compress_state(state, ""),
+                self.compress_orders(orders),
+                conversions,
+                "",
+                "",
+            ])
         )
-
-        # We truncate state.traderData, trader_data, and self.logs to the same max. length to fit the log limit
         max_item_length = (self.max_log_length - base_length) // 3
 
         print(
-            self.to_json(
-                [
-                    self.compress_state(state, self.truncate(state.traderData, max_item_length)),
-                    self.compress_orders(orders),
-                    conversions,
-                    self.truncate(trader_data, max_item_length),
-                    self.truncate(self.logs, max_item_length),
-                ]
-            )
+            self.to_json([
+                self.compress_state(state, self.truncate(state.traderData, max_item_length)),
+                self.compress_orders(orders),
+                conversions,
+                self.truncate(trader_data, max_item_length),
+                self.truncate(self.logs, max_item_length),
+            ])
         )
 
         self.logs = ""
@@ -64,46 +57,33 @@ class Logger:
         compressed = []
         for listing in listings.values():
             compressed.append([listing.symbol, listing.product, listing.denomination])
-
         return compressed
 
     def compress_order_depths(self, order_depths: dict[Symbol, OrderDepth]) -> dict[Symbol, list[Any]]:
         compressed = {}
         for symbol, order_depth in order_depths.items():
             compressed[symbol] = [order_depth.buy_orders, order_depth.sell_orders]
-
         return compressed
 
     def compress_trades(self, trades: dict[Symbol, list[Trade]]) -> list[list[Any]]:
         compressed = []
         for arr in trades.values():
             for trade in arr:
-                compressed.append(
-                    [
-                        trade.symbol,
-                        trade.price,
-                        trade.quantity,
-                        trade.buyer,
-                        trade.seller,
-                        trade.timestamp,
-                    ]
-                )
-
+                compressed.append([
+                    trade.symbol, trade.price, trade.quantity,
+                    trade.buyer, trade.seller, trade.timestamp,
+                ])
         return compressed
 
     def compress_observations(self, observations: Observation) -> list[Any]:
         conversion_observations = {}
         for product, observation in observations.conversionObservations.items():
             conversion_observations[product] = [
-                observation.bidPrice,
-                observation.askPrice,
-                observation.transportFees,
-                observation.exportTariff,
-                observation.importTariff,
-                observation.sugarPrice,
+                observation.bidPrice, observation.askPrice,
+                observation.transportFees, observation.exportTariff,
+                observation.importTariff, observation.sugarPrice,
                 observation.sunlightIndex,
             ]
-
         return [observations.plainValueObservations, conversion_observations]
 
     def compress_orders(self, orders: dict[Symbol, list[Order]]) -> list[list[Any]]:
@@ -111,7 +91,6 @@ class Logger:
         for arr in orders.values():
             for order in arr:
                 compressed.append([order.symbol, order.price, order.quantity])
-
         return compressed
 
     def to_json(self, value: Any) -> str:
@@ -120,10 +99,287 @@ class Logger:
     def truncate(self, value: str, max_length: int) -> str:
         if len(value) <= max_length:
             return value
+        return value[:max_length - 3] + "..."
 
-        return value[: max_length - 3] + "..."
 
 logger = Logger()
 
 
+#  TRADER
+
 class Trader:
+
+    # Position limits par produit
+    LIMITS = {
+        "EMERALDS": 50,
+        "TOMATOES": 50,
+    }
+
+    def __init__(self):
+        # ── État persistant (survit entre les timestamps) ──
+        self.tomato_ema = None  # EMA du fair value des Tomatoes
+
+        # ── État par timestamp (réinitialisé à chaque run) ──
+        self.orders = {}           # dict[product] -> list[Order]
+        self.buy_orders_sent = {}  # dict[product] -> int (volume buy déjà envoyé)
+        self.sell_orders_sent = {} # dict[product] -> int (volume sell déjà envoyé)
+
+    #  HELPERS GÉNÉRIQUES
+
+    def reset_orders(self, state: TradingState):
+        
+        self.orders = {}
+        self.buy_orders_sent = {}
+        self.sell_orders_sent = {}
+
+        for product in state.order_depths:
+            self.orders[product] = []
+            self.buy_orders_sent[product] = 0
+            self.sell_orders_sent[product] = 0
+
+    def get_position(self, state: TradingState, product: str) -> int:
+       
+        return state.position.get(product, 0)
+
+    def get_max_buy(self, state: TradingState, product: str) -> int:
+       
+        limit = self.LIMITS[product]
+        pos = self.get_position(state, product)
+        return limit - pos - self.buy_orders_sent[product]
+
+    def get_max_sell(self, state: TradingState, product: str) -> int:
+       
+        limit = self.LIMITS[product]
+        pos = self.get_position(state, product)
+        return pos + limit - self.sell_orders_sent[product]
+
+    def send_buy_order(self, product: str, price: int, amount: int, msg: str = None):
+       
+        if amount <= 0:
+            return
+        self.orders[product].append(Order(product, int(price), amount))
+        self.buy_orders_sent[product] += amount
+        if msg:
+            logger.print(msg)
+
+    def send_sell_order(self, product: str, price: int, amount: int, msg: str = None):
+        
+        if amount <= 0:
+            return
+        self.orders[product].append(Order(product, int(price), -amount))
+        self.sell_orders_sent[product] += amount
+        if msg:
+            logger.print(msg)
+
+    def search_buys(self, state: TradingState, product: str, fair_value: float, depth: int = 3):
+       
+        order_depth = state.order_depths[product]
+        if len(order_depth.sell_orders) == 0:
+            return
+
+        orders = list(order_depth.sell_orders.items())
+        pos = self.get_position(state, product)
+
+        for ask, amount in orders[:min(len(orders), depth)]:
+            ask_volume = -amount  # sell_orders a des volumes négatifs
+
+            take = False
+            if ask < fair_value:
+                take = True
+            elif abs(ask - fair_value) < 1 and pos < 0:
+                take = True
+
+            if take:
+                max_buy = self.get_max_buy(state, product)
+                size = min(max_buy, ask_volume)
+                if size > 0:
+                    self.send_buy_order(product, ask, size,
+                        msg=f"TAKE BUY {size}x @ {ask}")
+
+    def search_sells(self, state: TradingState, product: str, fair_value: float, depth: int = 3):
+        
+        order_depth = state.order_depths[product]
+        if len(order_depth.buy_orders) == 0:
+            return
+
+        orders = list(order_depth.buy_orders.items())
+        pos = self.get_position(state, product)
+
+        for bid, bid_volume in orders[:min(len(orders), depth)]:
+            take = False
+            if bid > fair_value:
+                take = True
+            elif abs(bid - fair_value) < 1 and pos > 0:
+                take = True
+
+            if take:
+                max_sell = self.get_max_sell(state, product)
+                size = min(max_sell, bid_volume)
+                if size > 0:
+                    self.send_sell_order(product, bid, size,
+                        msg=f"TAKE SELL {size}x @ {bid}")
+
+    def get_best_bid(self, state: TradingState, product: str, fair_value: float):
+        
+        order_depth = state.order_depths[product]
+        if len(order_depth.buy_orders) == 0:
+            return None
+
+        for bid, _ in order_depth.buy_orders.items():
+            if bid < fair_value:
+                return bid
+
+        return None
+
+    def get_best_ask(self, state: TradingState, product: str, fair_value: float):
+        
+        order_depth = state.order_depths[product]
+        if len(order_depth.sell_orders) == 0:
+            return None
+
+        for ask, _ in order_depth.sell_orders.items():
+            if ask > fair_value:
+                return ask
+
+        return None
+
+    def get_wall_mid(self, state: TradingState, product: str) -> float:
+    
+        order_depth = state.order_depths[product]
+
+        # Bid avec le plus gros volume
+        best_wall_bid = None
+        max_vol = 0
+        for price, volume in order_depth.buy_orders.items():
+            if volume > max_vol:
+                max_vol = volume
+                best_wall_bid = price
+
+        # Ask avec le plus gros volume (volumes négatifs → abs())
+        best_wall_ask = None
+        max_vol = 0
+        for price, volume in order_depth.sell_orders.items():
+            if abs(volume) > max_vol:
+                max_vol = abs(volume)
+                best_wall_ask = price
+
+        if best_wall_bid is not None and best_wall_ask is not None:
+            return (best_wall_bid + best_wall_ask) / 2
+
+        # Fallback : BBO classique si un côté n'a pas de wall
+        bids = order_depth.buy_orders
+        asks = order_depth.sell_orders
+        if len(bids) > 0 and len(asks) > 0:
+            return (max(bids.keys()) + min(asks.keys())) / 2
+
+        return None
+
+    
+    #  STRATÉGIES PAR PRODUIT
+    
+    def trade_emeralds(self, state: TradingState):
+        
+        product = "EMERALDS"
+        fair_value = 10000
+
+        # ── 1. Taking ──
+        self.search_buys(state, product, fair_value, depth=3)
+        self.search_sells(state, product, fair_value, depth=3)
+
+        # ── 2. Market Making ──
+        # Spread par défaut si personne d'autre dans le book
+        buy_price = 9996
+        sell_price = 10004
+
+        # Penny jumping si un autre MM est présent
+        other_bid = self.get_best_bid(state, product, fair_value)
+        other_ask = self.get_best_ask(state, product, fair_value)
+
+        if other_bid is not None and other_ask is not None:
+            buy_price = other_bid + 1
+            sell_price = other_ask - 1
+
+        # ── 3. Position-reducing ──
+        max_buy = self.get_max_buy(state, product)
+        max_sell = self.get_max_sell(state, product)
+        pos = self.get_position(state, product)
+
+        # Long + buy_price == fair_value → ne pas acheter plus
+        if not (pos > 0 and buy_price == fair_value):
+            self.send_buy_order(product, buy_price, max_buy,
+                msg=f"EMERALDS MM Buy {max_buy} @ {buy_price}")
+
+        # Short + sell_price == fair_value → ne pas vendre plus
+        if not (pos < 0 and sell_price == fair_value):
+            self.send_sell_order(product, sell_price, max_sell,
+                msg=f"EMERALDS MM Sell {max_sell} @ {sell_price}")
+
+    def trade_tomatoes(self, state: TradingState):
+        
+        product = "TOMATOES"
+        order_depth = state.order_depths[product]
+
+        if len(order_depth.buy_orders) == 0 or len(order_depth.sell_orders) == 0:
+            return
+
+        # ── Fair Value : Wall Mid + EMA ──
+        wall_mid = self.get_wall_mid(state, product)
+        if wall_mid is None:
+            return
+
+        alpha = 0.1
+        if self.tomato_ema is None:
+            self.tomato_ema = wall_mid
+        else:
+            self.tomato_ema = alpha * wall_mid + (1 - alpha) * self.tomato_ema
+
+        fair_value = self.tomato_ema
+        logger.print(f"TOMATOES fair={fair_value:.1f} wall={wall_mid:.1f}")
+
+        # ── 1. Taking ──
+        self.search_buys(state, product, fair_value, depth=3)
+        self.search_sells(state, product, fair_value, depth=3)
+
+        # ── 2. Market Making ──
+        buy_price = math.floor(fair_value) - 2
+        sell_price = math.ceil(fair_value) + 2
+
+        int_fair = int(math.ceil(fair_value))
+        other_bid = self.get_best_bid(state, product, int_fair)
+        other_ask = self.get_best_ask(state, product, int_fair)
+
+        if other_bid is not None and other_ask is not None:
+            if other_bid + 1 < fair_value:
+                buy_price = other_bid + 1
+            if other_ask - 1 > fair_value:
+                sell_price = other_ask - 1
+
+        # ── 3. Position-reducing ──
+        max_buy = self.get_max_buy(state, product)
+        max_sell = self.get_max_sell(state, product)
+        pos = self.get_position(state, product)
+
+        if not (pos > 0 and float(buy_price) == fair_value):
+            self.send_buy_order(product, buy_price, max_buy,
+                msg=f"TOMATOES MM Buy {max_buy} @ {buy_price}")
+
+        if not (pos < 0 and float(sell_price) == fair_value):
+            self.send_sell_order(product, sell_price, max_sell,
+                msg=f"TOMATOES MM Sell {max_sell} @ {sell_price}")
+
+
+    #  RUN — imposé par imc
+   
+    def run(self, state: TradingState):
+        self.reset_orders(state)
+
+        if "EMERALDS" in state.order_depths:
+            self.trade_emeralds(state)
+
+        if "TOMATOES" in state.order_depths:
+            self.trade_tomatoes(state)
+
+        trader_data = ""
+        conversions = 0
+        logger.flush(state, self.orders, conversions, trader_data)
+        return self.orders, conversions, trader_data
