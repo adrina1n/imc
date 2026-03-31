@@ -5,7 +5,7 @@
 
 ---
 
-## 📊 Overview
+##  Overview
 
 This repository contains our algorithmic trading strategy for the **IMC Prosperity 4 Tutorial Round**. The strategy implements a robust market making approach with product-specific fair value estimation and risk management.
 
@@ -20,7 +20,7 @@ This repository contains our algorithmic trading strategy for the **IMC Prosperi
 
 ---
 
-## 🎯 Strategy Details
+##  Strategy Details
 
 ### 1. Fair Price Estimation
 
@@ -139,9 +139,9 @@ Benefit: Way less risk
 
 #### Why This Approach?
 
-✅ Always takes trades with an edge (price ≠ fair value)  
-✅ Only takes fair-value trades that reduce exposure  
-✅ Prevents accumulating dangerous positions  
+ Always takes trades with an edge (price ≠ fair value)  
+ Only takes fair-value trades that reduce exposure  
+ Prevents accumulating dangerous positions  
 
 ---
 
