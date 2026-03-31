@@ -124,3 +124,6 @@ class Logger:
         return value[: max_length - 3] + "..."
 
 logger = Logger()
+
+
+class Trader:
