@@ -48,22 +48,12 @@ fair_value = 10000  # Constant
 wall_bid = price at bid level with maximum volume
 wall_ask = price at ask level with maximum volume
 wall_mid = (wall_bid + wall_ask) / 2
-
-# Step 2: Apply EMA smoothing
-alpha = 0.1
-fair_value = alpha × wall_mid + (1 - alpha) × previous_ema
 ```
 
 **Why Wall Mid?**
 - BBO (best bid/offer) is noisy due to ephemeral small orders
 - Deepest levels (highest volume) represent true liquidity
 - Reduces noise by **~50%** (σ: 1.34 → 0.67)
-
-**Why EMA?**
-- Smooths out remaining volatility
-- Filters false mean reversion signals
-- Provides stable reference for trading decisions
-
 ---
 
 ### 2. Market Making (Spread Capture)
