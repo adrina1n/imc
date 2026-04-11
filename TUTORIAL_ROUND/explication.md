@@ -93,8 +93,6 @@ Result: Queue priority + profitable spreads
 
 ### 3. Position Management (Inventory Control)
 
-We use a **conditional approach** inspired by the CMU Physics team's winning strategy from Prosperity 3.
-
 #### Position-Reducing at Fair Value
 
 **Rule:** Only take fair-value trades that **shrink |position|**
@@ -132,19 +130,6 @@ Benefit: Way less risk
  Always takes trades with an edge (price ≠ fair value)  
  Only takes fair-value trades that reduce exposure  
  Prevents accumulating dangerous positions  
-
----
-
-### 4. Order Flow / Trader Following
-
-**Status:** Not implemented in tutorial round
-
-**Future Enhancement:** Monitor market trades to detect participant behavior patterns.
-
-Potential signals:
-- Consistent buying/selling by specific traders
-- Volume-weighted order flow
-- Momentum indicators
 
 ---
 
