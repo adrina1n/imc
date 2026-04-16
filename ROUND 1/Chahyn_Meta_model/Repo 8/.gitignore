@@ -1,0 +1,18 @@
+# PDFs (large files)
+*.pdf
+
+# Reference repos (cloned from GitHub - too large to push)
+references/p1-*/
+references/p2-*/
+references/p3-*/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Temp files
+tmpclaude-*
+
+# Jupyter checkpoints
+.ipynb_checkpoints/

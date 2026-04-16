@@ -1,0 +1,22 @@
+# IMC Prosperity 4 Preparation — Local Analysis Dependencies
+#
+# These packages are for LOCAL development and analysis ONLY.
+# Your competition submission can only use the Python standard library.
+#
+# Install with:  pip install -r requirements.txt
+# Or with uv:    uv pip install -r requirements.txt
+
+# Core scientific stack
+numpy>=1.24.0
+pandas>=2.0.0
+matplotlib>=3.7.0
+scipy>=1.11.0       # for scipy.stats.norm (comparison only, not in competition)
+
+# Jupyter
+jupyter>=1.0.0
+notebook>=7.0.0
+jupyterlab>=4.0.0   # optional, nicer interface
+nbconvert>=7.0.0    # for executing notebooks from CLI
+
+# Optional but useful
+ipywidgets>=8.0.0   # interactive widgets in Jupyter

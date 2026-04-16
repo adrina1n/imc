@@ -1,0 +1,1 @@
+#Après discussion avec Ad c'est ce qui a deja été fait. Je peux revenir dessus à tout moment
